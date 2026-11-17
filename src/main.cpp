@@ -10,6 +10,7 @@ const int ID_MAXIMO = 999999999;
 
 // Campos usados nas buscas e na ordenacao.
 enum Campo { CAMPO_NOME = 1, CAMPO_TELEFONE, CAMPO_EMAIL, CAMPO_EMPRESA };
+const char* const CAMPOS[] = {"Nome", "Telefone", "E-mail", "Empresa"};
 const int TOTAL_TIPOS = 3;
 const char* const TIPOS[TOTAL_TIPOS] = {"Realizada", "Recebida", "Perdida"};
 
@@ -52,6 +53,13 @@ struct Fila {
     NoRetorno* fim = nullptr;     // ultimo a entrar
 };
 
+// No da arvore binaria de busca (chave = nome). Guarda o ponteiro do contato, sem copiar.
+struct NoArvore {
+    Contato* contato;
+    NoArvore* esquerda;
+    NoArvore* direita;
+};
+
 // Reune todos os dados. E passada por referencia (&) para as funcoes alterarem o original.
 struct Agenda {
     Contato* contatos[MAX] = {};  // vetor de ponteiros; cada Contato e criado com new
@@ -62,6 +70,7 @@ struct Agenda {
     Pilha historico;
     int proximaChamada = 1;
     Fila retornos;
+    NoArvore* raiz = nullptr;  // arvore de contatos indexada pelo nome
 };
 
 // ---------- Entrada de dados ----------
@@ -128,6 +137,12 @@ const string& valorDoCampo(const Contato* c, int campo) {
     if (campo == CAMPO_EMAIL) return c->email;
     if (campo == CAMPO_EMPRESA) return c->empresa;
     return c->nome;
+}
+
+// Mostra os campos numerados e le a escolha.
+int lerCampo(const string& rotulo) {
+    for (int i = CAMPO_NOME; i <= CAMPO_EMPRESA; i++) cout << "  " << i << ") " << CAMPOS[i - 1] << "\n";
+    return lerInteiro(rotulo, CAMPO_NOME, CAMPO_EMPRESA);
 }
 
 // Mostra um contato em uma linha.
@@ -302,6 +317,75 @@ void liberarFila(Fila& f) {
     while (desenfileirarRetorno(f)) {}
 }
 
+// ---------- Arvore binaria de busca (recursiva) [R3, R8] ----------
+// Por que arvore: indexada pelo nome, a busca e O(log n) em media e o percurso in-order entrega
+// os contatos em ordem alfabetica sem ordenar o vetor. Nome igual vai para a direita (homonimos).
+
+// Insere um contato (recursivo). Retorno: a raiz da subarvore depois da insercao.
+NoArvore* inserirNaArvore(NoArvore* raiz, Contato* c) {
+    if (raiz == nullptr) return new NoArvore{c, nullptr, nullptr};
+    if (comparar(c->nome, raiz->contato->nome) < 0) raiz->esquerda = inserirNaArvore(raiz->esquerda, c);
+    else raiz->direita = inserirNaArvore(raiz->direita, c);
+    return raiz;
+}
+
+// Busca recursiva pelo nome (acha todos os homonimos). 'comparacoes' e ponteiro (*) para o mesmo
+// contador ser somado em todas as chamadas recursivas; 'exibir' tem valor padrao true.
+// Retorno: quantidade de contatos encontrados.
+int buscarNaArvore(const NoArvore* raiz, const string& nome, long* comparacoes, bool exibir = true) {
+    if (raiz == nullptr) return 0;
+    (*comparacoes)++;
+    int cmp = comparar(nome, raiz->contato->nome);
+    if (cmp < 0) return buscarNaArvore(raiz->esquerda, nome, comparacoes, exibir);
+    int achados = 0;
+    if (cmp == 0) {
+        achados = 1;
+        if (exibir) exibirContato(raiz->contato);
+    }
+    return achados + buscarNaArvore(raiz->direita, nome, comparacoes, exibir);
+}
+
+// Percurso in-order (esquerda, raiz, direita): mostra os contatos em ordem alfabetica.
+void percorrerEmOrdem(const NoArvore* raiz) {
+    if (raiz == nullptr) return;
+    percorrerEmOrdem(raiz->esquerda);
+    exibirContato(raiz->contato);
+    percorrerEmOrdem(raiz->direita);
+}
+
+// Libera os nos (recursivo, pos-ordem); os contatos NAO sao apagados. 'raiz' por referencia (&).
+void liberarArvore(NoArvore*& raiz) {
+    if (raiz == nullptr) return;
+    liberarArvore(raiz->esquerda);
+    liberarArvore(raiz->direita);
+    delete raiz;
+    raiz = nullptr;
+}
+
+// ---------- Ordenacao [R9] ----------
+
+// Insertion Sort: insere cada elemento na posicao certa da parte ja ordenada.
+// Complexidade (n = quantidade de contatos):
+//   melhor caso O(n)    - vetor ja ordenado (1 comparacao por elemento)
+//   caso medio  O(n^2)
+//   pior caso   O(n^2)  - vetor em ordem inversa
+//   memoria extra O(1)  - ordena no proprio vetor; e estavel.
+// 'v' e um vetor de ponteiros (Contato**): so os ponteiros trocam de lugar, nao os contatos.
+// 'comparacoes' e ponteiro (*) para o chamador receber a contagem.
+void insertionSort(Contato** v, int n, int campo, long* comparacoes) {
+    for (int i = 1; i < n; i++) {
+        Contato* atual = v[i];
+        int j = i - 1;
+        while (j >= 0) {
+            (*comparacoes)++;
+            if (comparar(valorDoCampo(v[j], campo), valorDoCampo(atual, campo)) <= 0) break;
+            v[j + 1] = v[j];
+            j--;
+        }
+        v[j + 1] = atual;
+    }
+}
+
 // ---------- Busca [R10] ----------
 
 // Busca sequencial: percorre o vetor do inicio ao fim. Melhor caso O(1), medio e pior O(n);
@@ -324,6 +408,12 @@ int indiceDoContato(const Agenda& a, int id) {
     return -1;
 }
 
+// Reconstroi a arvore a partir do vetor (usado ao excluir, no lugar de remover um no).
+void reconstruirArvore(Agenda& a) {
+    liberarArvore(a.raiz);
+    for (int i = 0; i < a.total; i++) a.raiz = inserirNaArvore(a.raiz, a.contatos[i]);
+}
+
 // Cria o contato com new e o guarda no vetor ('dados' por referencia const &: sem copia).
 // Retorno: ponteiro do contato criado ou nullptr se a agenda estiver cheia.
 Contato* adicionarContato(Agenda& a, const Contato& dados) {
@@ -331,6 +421,7 @@ Contato* adicionarContato(Agenda& a, const Contato& dados) {
     Contato* novo = new Contato(dados);
     novo->id = a.proximoId++;
     a.contatos[a.total++] = novo;
+    a.raiz = inserirNaArvore(a.raiz, novo);
     return novo;
 }
 
@@ -344,6 +435,7 @@ bool excluirContato(Agenda& a, int id) {
     for (int i = pos; i < a.total - 1; i++) a.contatos[i] = a.contatos[i + 1];
     a.total--;
     a.contatos[a.total] = nullptr;
+    reconstruirArvore(a);
     delete alvo;
     return true;
 }
@@ -353,6 +445,7 @@ void liberarAgenda(Agenda& a) {
     while (a.grupos != nullptr) removerGrupo(a.grupos, a.grupos->id);
     liberarPilha(a.historico);
     liberarFila(a.retornos);
+    liberarArvore(a.raiz);
     for (int i = 0; i < a.total; i++) {
         delete a.contatos[i];
         a.contatos[i] = nullptr;
@@ -541,18 +634,53 @@ void menuFila(Agenda& a) {
     } while (opcao != 0);
 }
 
+void menuOrdenar(Agenda& a) {
+    if (a.total < 2) {
+        cout << "  E preciso ter pelo menos 2 contatos.\n";
+        return;
+    }
+    int campo = lerCampo("Ordenar por");
+    if (!cin) return;
+    long comparacoes = 0;
+    insertionSort(a.contatos, a.total, campo, &comparacoes);
+    cout << "  " << a.total << " contatos ordenados por " << CAMPOS[campo - 1]
+         << " (Insertion Sort, " << comparacoes << " comparacoes).\n";
+    listarContatos(a, 10);
+}
+
+void menuArvore(Agenda& a) {
+    int opcao;
+    do {
+        cout << "\n=== ARVORE BINARIA DE BUSCA ===\n1. Listar em ordem alfabetica (in-order)\n"
+             << "2. Buscar por nome\n0. Voltar\n";
+        opcao = lerInteiro("Opcao", 0, 2);
+        if (opcao == 1) {
+            if (a.raiz == nullptr) cout << "  Arvore vazia.\n";
+            else percorrerEmOrdem(a.raiz);
+        } else if (opcao == 2) {
+            string nome = lerTexto("Nome (exato, sem diferenciar maiusculas)");
+            long comparacoes = 0;
+            int achados = buscarNaArvore(a.raiz, nome, &comparacoes);
+            cout << "  Encontrados: " << achados << " | Comparacoes: " << comparacoes << "\n";
+        }
+    } while (opcao != 0);
+}
+
 void menuPrincipal(Agenda& a) {
     int opcao;
     do {
         cout << "\n=== AGENDA DE CONTATOS ===\n1. Contatos\n2. Buscar contatos\n";
         cout << "3. Grupos\n4. Historico de chamadas\n5. Fila de retorno\n";
+        cout << "6. Ordenar contatos\n7. Arvore binaria (por nome)\n";
         cout << "0. Sair\n";
-        opcao = lerInteiro("Opcao", 0, 5);
+        opcao = lerInteiro("Opcao", 0, 7);
         if (opcao == 1) menuContatos(a);
         else if (opcao == 2) menuBuscar(a);
         else if (opcao == 3) menuGrupos(a);
         else if (opcao == 4) menuHistorico(a);
         else if (opcao == 5) menuFila(a);
+        else if (opcao == 6) menuOrdenar(a);
+        else if (opcao == 7) menuArvore(a);
     } while (opcao != 0);
     cout << "\nEncerrando...\n";
 }

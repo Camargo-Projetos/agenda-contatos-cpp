@@ -18,6 +18,8 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 | 3 | Grupos: criar, remover, adicionar/remover contato, listar |
 | 4 | Histórico de chamadas: registrar, ver a última, desfazer, listar |
 | 5 | Fila de retorno: adicionar, atender o próximo, listar |
+| 6 | Ordenar contatos (Insertion Sort) |
+| 7 | Árvore binária de busca: listar em ordem alfabética e buscar por nome |
 | 0 | Sair |
 
 ## Estruturas de dados
@@ -28,6 +30,7 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 | Lista simplesmente encadeada | Grupos e membros de cada grupo | `NoGrupo`, `NoMembro` |
 | Pilha (LIFO) | Histórico de chamadas (a mais recente no topo) | `Pilha`, `NoChamada` |
 | Fila (FIFO) | Retornos de ligação (quem entrou primeiro é atendido primeiro) | `Fila`, `NoRetorno` |
+| Árvore binária de busca | Contatos indexados pelo nome | `NoArvore` |
 
 ## Requisitos da avaliação
 
@@ -35,7 +38,17 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 |---|---|---|
 | R1 | Funções, passagem por valor/referência, parâmetro default | `lerTexto` (default `obrigatorio = true`), `listarContatos` (default `maximo = MAX`), `adicionarContato(Agenda&, const Contato&)`, `buscaSequencial` (default `inicio = 0`) |
 | R2 | Ponteiros | `Contato* contatos[MAX]`, `buscaSequencial` (`long* comparacoes`), `valorDoCampo` (`const Contato*` e retorno `const string&`) |
+| R3 | Recursividade | `inserirNaArvore`, `buscarNaArvore`, `percorrerEmOrdem`, `liberarArvore` |
 | R4 | `new` / `delete` | `adicionarContato` (`new Contato`), `excluirContato` e `liberarAgenda` (`delete`) |
 | R5 | Lista encadeada | `criarGrupo`, `removerGrupo`, `buscarGrupo`, `adicionarMembro`, `removerMembro`, `listarGrupos` |
 | R6 | Pilha (LIFO) | `empilharChamada`, `consultarTopo`, `desempilharChamada`, `listarHistorico` |
 | R7 | Fila (FIFO) | `enfileirarRetorno`, `desenfileirarRetorno`, `listarRetornos` |
+| R8 | Árvore binária de busca | `inserirNaArvore`, `buscarNaArvore`, `percorrerEmOrdem` (in-order), `reconstruirArvore` |
+| R9 | Ordenação com análise de complexidade | `insertionSort` (análise no comentário e na tabela abaixo) |
+
+## Análise de complexidade
+
+| Algoritmo | Melhor caso | Caso médio | Pior caso | Memória extra | Estável |
+|---|---|---|---|---|---|
+| Insertion Sort | O(n) | O(n²) | O(n²) | O(1) | Sim |
+| Árvore binária de busca (sem balanceamento) | O(1) | O(log n) | O(n) | O(1) | — |
