@@ -10,6 +10,8 @@ const int ID_MAXIMO = 999999999;
 
 // Campos usados nas buscas e na ordenacao.
 enum Campo { CAMPO_NOME = 1, CAMPO_TELEFONE, CAMPO_EMAIL, CAMPO_EMPRESA };
+const int TOTAL_TIPOS = 3;
+const char* const TIPOS[TOTAL_TIPOS] = {"Realizada", "Recebida", "Perdida"};
 
 // ---------- Estruturas de dados ----------
 
@@ -18,11 +20,48 @@ struct Contato {
     string nome, telefone, email, empresa;
 };
 
+// Lista de grupos; cada grupo tem a sua lista de membros (ponteiros, sem copiar os contatos).
+struct NoMembro {
+    Contato* contato;
+    NoMembro* proximo;
+};
+struct NoGrupo {
+    int id;
+    string nome;
+    NoMembro* membros;  // cabeca da lista de membros
+    NoGrupo* proximo;
+};
+
+// Pilha do historico e fila de retornos: guardam COPIA do nome e telefone,
+// entao continuam validas mesmo se o contato for excluido.
+struct NoChamada {
+    int numero;
+    string nome, telefone, tipo;
+    NoChamada* proximo;
+};
+struct Pilha {
+    NoChamada* topo = nullptr;  // chamada mais recente
+};
+struct NoRetorno {
+    int idContato;
+    string nome, telefone;
+    NoRetorno* proximo;
+};
+struct Fila {
+    NoRetorno* inicio = nullptr;  // proximo a ser atendido
+    NoRetorno* fim = nullptr;     // ultimo a entrar
+};
+
 // Reune todos os dados. E passada por referencia (&) para as funcoes alterarem o original.
 struct Agenda {
     Contato* contatos[MAX] = {};  // vetor de ponteiros; cada Contato e criado com new
     int total = 0;
     int proximoId = 1;
+    NoGrupo* grupos = nullptr;  // cabeca da lista de grupos
+    int proximoGrupo = 1;
+    Pilha historico;
+    int proximaChamada = 1;
+    Fila retornos;
 };
 
 // ---------- Entrada de dados ----------
@@ -97,6 +136,172 @@ void exibirContato(const Contato* c) {
          << (c->email.empty() ? "-" : c->email) << " | " << (c->empresa.empty() ? "-" : c->empresa) << "\n";
 }
 
+// ---------- Grupos: lista simplesmente encadeada [R5] ----------
+
+// Insere um grupo no FIM da lista. 'lista' e referencia (&) ao ponteiro da cabeca:
+// se a lista estiver vazia, o ponteiro do chamador passa a apontar para o novo no.
+NoGrupo* criarGrupo(NoGrupo*& lista, int id, const string& nome) {
+    NoGrupo* novo = new NoGrupo{id, nome, nullptr, nullptr};
+    if (lista == nullptr) {
+        lista = novo;
+    } else {
+        NoGrupo* ultimo = lista;
+        while (ultimo->proximo != nullptr) ultimo = ultimo->proximo;
+        ultimo->proximo = novo;
+    }
+    return novo;
+}
+
+// Travessia da lista procurando um grupo pelo ID. 'lista' vai por valor: andar com ele
+// nao muda a cabeca do chamador. Retorno: o no ou nullptr.
+NoGrupo* buscarGrupo(NoGrupo* lista, int id) {
+    while (lista != nullptr && lista->id != id) lista = lista->proximo;
+    return lista;
+}
+
+// Remove um contato da lista de membros do grupo (o contato NAO e apagado).
+bool removerMembro(NoGrupo* g, int idContato) {
+    NoMembro* anterior = nullptr;
+    NoMembro* atual = g->membros;
+    while (atual != nullptr && atual->contato->id != idContato) {
+        anterior = atual;
+        atual = atual->proximo;
+    }
+    if (atual == nullptr) return false;
+    if (anterior == nullptr) g->membros = atual->proximo;
+    else anterior->proximo = atual->proximo;
+    delete atual;
+    return true;
+}
+
+// Adiciona um contato no fim da lista de membros. Retorno: false se ja era membro.
+bool adicionarMembro(NoGrupo* g, Contato* c) {
+    NoMembro* ultimo = nullptr;
+    for (NoMembro* m = g->membros; m != nullptr; m = m->proximo) {
+        if (m->contato == c) return false;
+        ultimo = m;
+    }
+    NoMembro* novo = new NoMembro{c, nullptr};
+    if (ultimo == nullptr) g->membros = novo;
+    else ultimo->proximo = novo;
+    return true;
+}
+
+// Remove um grupo e libera os nos dos membros (os contatos continuam existindo).
+bool removerGrupo(NoGrupo*& lista, int id) {
+    NoGrupo* anterior = nullptr;
+    NoGrupo* atual = lista;
+    while (atual != nullptr && atual->id != id) {
+        anterior = atual;
+        atual = atual->proximo;
+    }
+    if (atual == nullptr) return false;
+    if (anterior == nullptr) lista = atual->proximo;
+    else anterior->proximo = atual->proximo;
+    while (atual->membros != nullptr) removerMembro(atual, atual->membros->contato->id);
+    delete atual;
+    return true;
+}
+
+// Travessia: mostra cada grupo e seus membros.
+void listarGrupos(const NoGrupo* lista) {
+    if (lista == nullptr) {
+        cout << "  Nenhum grupo cadastrado.\n";
+        return;
+    }
+    for (const NoGrupo* g = lista; g != nullptr; g = g->proximo) {
+        cout << "Grupo [" << g->id << "] " << g->nome << "\n";
+        if (g->membros == nullptr) cout << "  (sem membros)\n";
+        for (const NoMembro* m = g->membros; m != nullptr; m = m->proximo) exibirContato(m->contato);
+    }
+}
+
+// ---------- Pilha (LIFO): historico de chamadas [R6] ----------
+
+// push: o novo no aponta para o antigo topo e vira o topo. 'p' vai por referencia (&) porque o topo muda.
+void empilharChamada(Pilha& p, int numero, const Contato* c, const string& tipo) {
+    p.topo = new NoChamada{numero, c->nome, c->telefone, tipo, p.topo};
+}
+
+// peek: consulta o topo sem remover. Retorno: nullptr se vazia.
+const NoChamada* consultarTopo(const Pilha& p) {
+    return p.topo;
+}
+
+// pop: remove o topo (a chamada mais recente). Retorno: false se vazia.
+bool desempilharChamada(Pilha& p) {
+    if (p.topo == nullptr) return false;
+    NoChamada* removido = p.topo;
+    p.topo = removido->proximo;
+    delete removido;
+    return true;
+}
+
+// Mostra uma chamada em uma linha.
+void exibirChamada(const NoChamada* n) {
+    cout << "  #" << n->numero << " | " << n->tipo << " | " << n->nome << " (" << n->telefone << ")\n";
+}
+
+// Lista do mais recente (topo) para o mais antigo, sem alterar a pilha.
+void listarHistorico(const Pilha& p) {
+    if (p.topo == nullptr) {
+        cout << "  Historico vazio.\n";
+        return;
+    }
+    for (const NoChamada* n = p.topo; n != nullptr; n = n->proximo) exibirChamada(n);
+}
+
+// Esvazia a pilha liberando os nos.
+void liberarPilha(Pilha& p) {
+    while (desempilharChamada(p)) {}
+}
+
+// ---------- Fila (FIFO): retornos de ligacao [R7] ----------
+
+// enqueue: insere no FIM da fila. Retorno: false se o contato ja esta aguardando.
+bool enfileirarRetorno(Fila& f, const Contato* c) {
+    for (const NoRetorno* n = f.inicio; n != nullptr; n = n->proximo)
+        if (n->idContato == c->id) return false;
+    NoRetorno* novo = new NoRetorno{c->id, c->nome, c->telefone, nullptr};
+    if (f.fim == nullptr) f.inicio = novo;
+    else f.fim->proximo = novo;
+    f.fim = novo;
+    return true;
+}
+
+// dequeue: remove o PRIMEIRO da fila (quem entrou antes). Retorno: false se vazia.
+bool desenfileirarRetorno(Fila& f) {
+    if (f.inicio == nullptr) return false;
+    NoRetorno* removido = f.inicio;
+    f.inicio = removido->proximo;
+    if (f.inicio == nullptr) f.fim = nullptr;  // a fila ficou vazia
+    delete removido;
+    return true;
+}
+
+// Mostra um retorno pendente em uma linha.
+void exibirRetorno(const NoRetorno* n) {
+    cout << "[" << n->idContato << "] " << n->nome << " (" << n->telefone << ")\n";
+}
+
+// Lista os retornos na ordem de atendimento.
+void listarRetornos(const Fila& f) {
+    if (f.inicio == nullptr) {
+        cout << "  Nenhum retorno pendente.\n";
+        return;
+    }
+    int posicao = 1;
+    for (const NoRetorno* n = f.inicio; n != nullptr; n = n->proximo) {
+        cout << "  " << posicao++ << ". ";
+        exibirRetorno(n);
+    }
+}
+
+// Esvazia a fila liberando os nos.
+void liberarFila(Fila& f) {
+    while (desenfileirarRetorno(f)) {}
+}
+
 // ---------- Busca [R10] ----------
 
 // Busca sequencial: percorre o vetor do inicio ao fim. Melhor caso O(1), medio e pior O(n);
@@ -135,6 +340,7 @@ bool excluirContato(Agenda& a, int id) {
     int pos = indiceDoContato(a, id);
     if (pos < 0) return false;
     Contato* alvo = a.contatos[pos];
+    for (NoGrupo* g = a.grupos; g != nullptr; g = g->proximo) removerMembro(g, id);  // evita ponteiro solto
     for (int i = pos; i < a.total - 1; i++) a.contatos[i] = a.contatos[i + 1];
     a.total--;
     a.contatos[a.total] = nullptr;
@@ -144,6 +350,9 @@ bool excluirContato(Agenda& a, int id) {
 
 // Libera toda a memoria da agenda. Os contatos vao por ultimo: grupos e arvore apontam para eles.
 void liberarAgenda(Agenda& a) {
+    while (a.grupos != nullptr) removerGrupo(a.grupos, a.grupos->id);
+    liberarPilha(a.historico);
+    liberarFila(a.retornos);
     for (int i = 0; i < a.total; i++) {
         delete a.contatos[i];
         a.contatos[i] = nullptr;
@@ -228,14 +437,122 @@ void menuBuscar(Agenda& a) {
     cout << "  Encontrados: " << achados << " | Comparacoes: " << comparacoes << "\n";
 }
 
+NoGrupo* lerGrupo(Agenda& a) {
+    int id = lerInteiro("ID do grupo", 1, ID_MAXIMO);
+    if (!cin) return nullptr;
+    NoGrupo* g = buscarGrupo(a.grupos, id);
+    if (g == nullptr) cout << "  Grupo nao encontrado.\n";
+    return g;
+}
+
+void criarGrupoMenu(Agenda& a) {
+    string nome = lerTexto("Nome do grupo");
+    if (cin) cout << "  Grupo criado com ID " << criarGrupo(a.grupos, a.proximoGrupo++, nome)->id << ".\n";
+}
+
+void removerGrupoMenu(Agenda& a) {
+    NoGrupo* g = lerGrupo(a);
+    if (g == nullptr) return;
+    removerGrupo(a.grupos, g->id);
+    cout << "  Grupo removido (os contatos continuam cadastrados).\n";
+}
+
+void adicionarAoGrupoMenu(Agenda& a) {
+    NoGrupo* g = lerGrupo(a);
+    if (g == nullptr) return;
+    Contato* c = lerContato(a);
+    if (c == nullptr) return;
+    if (adicionarMembro(g, c)) cout << "  " << c->nome << " adicionado ao grupo " << g->nome << ".\n";
+    else cout << "  Esse contato ja pertence ao grupo.\n";
+}
+
+void removerDoGrupoMenu(Agenda& a) {
+    NoGrupo* g = lerGrupo(a);
+    if (g == nullptr) return;
+    int idContato = lerInteiro("ID do contato a remover do grupo", 1, ID_MAXIMO);
+    if (!cin) return;
+    if (removerMembro(g, idContato)) cout << "  Contato removido do grupo.\n";
+    else cout << "  Esse contato nao pertence ao grupo.\n";
+}
+
+void menuGrupos(Agenda& a) {
+    int opcao;
+    do {
+        cout << "\n=== GRUPOS ===\n1. Criar grupo\n2. Remover grupo\n3. Adicionar contato ao grupo\n"
+             << "4. Remover contato do grupo\n5. Listar grupos e membros\n0. Voltar\n";
+        opcao = lerInteiro("Opcao", 0, 5);
+        if (opcao == 1) criarGrupoMenu(a);
+        else if (opcao == 2) removerGrupoMenu(a);
+        else if (opcao == 3) adicionarAoGrupoMenu(a);
+        else if (opcao == 4) removerDoGrupoMenu(a);
+        else if (opcao == 5) listarGrupos(a.grupos);
+    } while (opcao != 0);
+}
+
+void registrarChamadaMenu(Agenda& a) {
+    Contato* c = lerContato(a);
+    if (c == nullptr) return;
+    for (int i = 0; i < TOTAL_TIPOS; i++) cout << "  " << (i + 1) << ") " << TIPOS[i] << "\n";
+    int tipo = lerInteiro("Tipo da chamada", 1, TOTAL_TIPOS);
+    if (!cin) return;
+    empilharChamada(a.historico, a.proximaChamada++, c, TIPOS[tipo - 1]);
+    cout << "  Chamada registrada.\n";
+}
+
+void menuHistorico(Agenda& a) {
+    int opcao;
+    do {
+        cout << "\n=== HISTORICO DE CHAMADAS ===\n1. Registrar chamada\n2. Ver a ultima chamada\n"
+             << "3. Desfazer (remover) a ultima chamada\n4. Listar historico\n0. Voltar\n";
+        opcao = lerInteiro("Opcao", 0, 4);
+        const NoChamada* topo = consultarTopo(a.historico);
+        if (opcao == 1) registrarChamadaMenu(a);
+        else if (opcao == 4) listarHistorico(a.historico);
+        else if ((opcao == 2 || opcao == 3) && topo == nullptr) cout << "  Historico vazio.\n";
+        else if (opcao == 2) exibirChamada(topo);
+        else if (opcao == 3) {
+            exibirChamada(topo);  // mostra qual chamada esta sendo desfeita
+            desempilharChamada(a.historico);
+            cout << "  Chamada removida.\n";
+        }
+    } while (opcao != 0);
+}
+
+void menuFila(Agenda& a) {
+    int opcao;
+    do {
+        cout << "\n=== FILA DE RETORNO ===\n1. Adicionar contato a fila\n2. Atender proximo da fila\n"
+             << "3. Listar retornos pendentes\n0. Voltar\n";
+        opcao = lerInteiro("Opcao", 0, 3);
+        if (opcao == 1) {
+            Contato* c = lerContato(a);
+            if (c == nullptr) continue;
+            if (enfileirarRetorno(a.retornos, c)) cout << "  " << c->nome << " entrou na fila.\n";
+            else cout << "  Esse contato ja esta na fila.\n";
+        } else if (opcao == 2 && a.retornos.inicio == nullptr) {
+            cout << "  Nenhum retorno pendente.\n";
+        } else if (opcao == 2) {
+            cout << "  Atendido: ";
+            exibirRetorno(a.retornos.inicio);
+            desenfileirarRetorno(a.retornos);
+        } else if (opcao == 3) {
+            listarRetornos(a.retornos);
+        }
+    } while (opcao != 0);
+}
+
 void menuPrincipal(Agenda& a) {
     int opcao;
     do {
         cout << "\n=== AGENDA DE CONTATOS ===\n1. Contatos\n2. Buscar contatos\n";
+        cout << "3. Grupos\n4. Historico de chamadas\n5. Fila de retorno\n";
         cout << "0. Sair\n";
-        opcao = lerInteiro("Opcao", 0, 2);
+        opcao = lerInteiro("Opcao", 0, 5);
         if (opcao == 1) menuContatos(a);
         else if (opcao == 2) menuBuscar(a);
+        else if (opcao == 3) menuGrupos(a);
+        else if (opcao == 4) menuHistorico(a);
+        else if (opcao == 5) menuFila(a);
     } while (opcao != 0);
     cout << "\nEncerrando...\n";
 }

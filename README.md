@@ -15,6 +15,9 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 |---|---|
 | 1 | Contatos: cadastrar, listar e excluir |
 | 2 | Buscar contatos |
+| 3 | Grupos: criar, remover, adicionar/remover contato, listar |
+| 4 | Histórico de chamadas: registrar, ver a última, desfazer, listar |
+| 5 | Fila de retorno: adicionar, atender o próximo, listar |
 | 0 | Sair |
 
 ## Estruturas de dados
@@ -22,6 +25,9 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 | Estrutura | Onde é usada | Tipo |
 |---|---|---|
 | Vetor de ponteiros (capacidade fixa `MAX`) | Contatos (cada `Contato` criado com `new`) | `Contato* contatos[MAX]` |
+| Lista simplesmente encadeada | Grupos e membros de cada grupo | `NoGrupo`, `NoMembro` |
+| Pilha (LIFO) | Histórico de chamadas (a mais recente no topo) | `Pilha`, `NoChamada` |
+| Fila (FIFO) | Retornos de ligação (quem entrou primeiro é atendido primeiro) | `Fila`, `NoRetorno` |
 
 ## Requisitos da avaliação
 
@@ -30,3 +36,6 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 | R1 | Funções, passagem por valor/referência, parâmetro default | `lerTexto` (default `obrigatorio = true`), `listarContatos` (default `maximo = MAX`), `adicionarContato(Agenda&, const Contato&)`, `buscaSequencial` (default `inicio = 0`) |
 | R2 | Ponteiros | `Contato* contatos[MAX]`, `buscaSequencial` (`long* comparacoes`), `valorDoCampo` (`const Contato*` e retorno `const string&`) |
 | R4 | `new` / `delete` | `adicionarContato` (`new Contato`), `excluirContato` e `liberarAgenda` (`delete`) |
+| R5 | Lista encadeada | `criarGrupo`, `removerGrupo`, `buscarGrupo`, `adicionarMembro`, `removerMembro`, `listarGrupos` |
+| R6 | Pilha (LIFO) | `empilharChamada`, `consultarTopo`, `desempilharChamada`, `listarHistorico` |
+| R7 | Fila (FIFO) | `enfileirarRetorno`, `desenfileirarRetorno`, `listarRetornos` |
