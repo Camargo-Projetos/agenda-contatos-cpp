@@ -20,6 +20,7 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 | 5 | Fila de retorno: adicionar, atender o próximo, listar |
 | 6 | Ordenar contatos (Insertion Sort) |
 | 7 | Árvore binária de busca: listar em ordem alfabética e buscar por nome |
+| 8 | Comparar buscas (sequencial x binária x árvore) |
 | 0 | Sair |
 
 ## Estruturas de dados
@@ -45,10 +46,25 @@ Sem `make`: `g++ -std=c++17 -Wall -Wextra -pedantic -o agenda src/main.cpp`
 | R7 | Fila (FIFO) | `enfileirarRetorno`, `desenfileirarRetorno`, `listarRetornos` |
 | R8 | Árvore binária de busca | `inserirNaArvore`, `buscarNaArvore`, `percorrerEmOrdem` (in-order), `reconstruirArvore` |
 | R9 | Ordenação com análise de complexidade | `insertionSort` (análise no comentário e na tabela abaixo) |
+| R10 | Busca sequencial, binária e comparação por contagem | `buscaSequencial`, `buscaBinaria`, `copiarOrdenado`, `compararBuscas` (menu 8) |
 
 ## Análise de complexidade
 
 | Algoritmo | Melhor caso | Caso médio | Pior caso | Memória extra | Estável |
 |---|---|---|---|---|---|
 | Insertion Sort | O(n) | O(n²) | O(n²) | O(1) | Sim |
+| Busca sequencial | O(1) | O(n) | O(n) | O(1) | — |
+| Busca binária (vetor ordenado) | O(1) | O(log n) | O(log n) | O(1) | — |
 | Árvore binária de busca (sem balanceamento) | O(1) | O(log n) | O(n) | O(1) | — |
+
+A busca binária exige o vetor ordenado: ordenar custa O(n²) com Insertion Sort, mas é feito uma única vez e depois cada busca custa O(log n). O menu 8 mostra a diferença pela contagem de comparações.
+
+## Testes
+
+O arquivo `tests/roteiro_completo.txt` reúne as entradas de uma sessão que passa por todos os menus (inclui a geração de contatos de teste, até encher a agenda, para comparar as buscas):
+
+    ./agenda < tests/roteiro_completo.txt
+
+Para procurar erros de memória e vazamentos:
+
+    make teste

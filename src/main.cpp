@@ -399,6 +399,53 @@ int buscaSequencial(Contato** v, int n, int campo, const string& chave, long* co
     return -1;
 }
 
+// Busca binaria: compara com o elemento do meio e descarta metade do vetor a cada passo.
+// Complexidade: melhor O(1), medio e pior O(log n); exige o vetor ORDENADO pelo mesmo campo.
+// Ao achar, continua a esquerda para devolver a PRIMEIRA ocorrencia. Retorno: indice ou -1.
+int buscaBinaria(Contato** v, int n, int campo, const string& chave, long* comparacoes) {
+    int esquerda = 0, direita = n - 1, achado = -1;
+    while (esquerda <= direita) {
+        int meio = esquerda + (direita - esquerda) / 2;
+        (*comparacoes)++;
+        int cmp = comparar(valorDoCampo(v[meio], campo), chave);
+        if (cmp == 0) {
+            achado = meio;
+            direita = meio - 1;
+        } else if (cmp < 0) {
+            esquerda = meio + 1;
+        } else {
+            direita = meio - 1;
+        }
+    }
+    return achado;
+}
+
+// Copia os ponteiros da agenda para 'destino' e ordena a COPIA (a ordem da agenda nao muda).
+void copiarOrdenado(const Agenda& a, Contato** destino, int campo, long* comparacoes) {
+    for (int i = 0; i < a.total; i++) destino[i] = a.contatos[i];
+    insertionSort(destino, a.total, campo, comparacoes);
+}
+
+// Executa a busca (metodo 1 = sequencial, 2 = binaria) e mostra todos os contatos encontrados.
+// Retorno: quantidade de contatos encontrados.
+int buscarEExibir(Contato** v, int n, int campo, const string& chave, int metodo, long* comparacoes) {
+    int achados = 0;
+    int pos = (metodo == 1) ? buscaSequencial(v, n, campo, chave, comparacoes)
+                            : buscaBinaria(v, n, campo, chave, comparacoes);
+    while (pos != -1) {
+        exibirContato(v[pos]);
+        achados++;
+        if (metodo == 1) {
+            pos = buscaSequencial(v, n, campo, chave, comparacoes, pos + 1);
+        } else {  // no vetor ordenado os repetidos ficam lado a lado
+            pos++;
+            (*comparacoes)++;
+            if (pos >= n || comparar(valorDoCampo(v[pos], campo), chave) != 0) pos = -1;
+        }
+    }
+    return achados;
+}
+
 // ---------- Operacoes da agenda ----------
 
 // Procura a posicao de um contato no vetor pelo ID. Retorno: indice ou -1.
@@ -438,6 +485,20 @@ bool excluirContato(Agenda& a, int id) {
     reconstruirArvore(a);
     delete alvo;
     return true;
+}
+
+// Cria contatos de teste ("Contato N") so para comparar as buscas. A conta embaralha os
+// numeros para a arvore nao virar uma lista.
+void gerarContatosTeste(Agenda& a, int quantidade) {
+    for (int k = 0; k < quantidade; k++) {
+        int n = (a.proximoId * 7919) % 10007;
+        Contato c;
+        c.nome = "Contato " + to_string(n);
+        c.telefone = "9" + to_string(100000000 + n);
+        c.email = "contato" + to_string(n) + "@teste.com";
+        c.empresa = "Empresa " + to_string(n % 20);
+        adicionarContato(a, c);
+    }
 }
 
 // Libera toda a memoria da agenda. Os contatos vao por ultimo: grupos e arvore apontam para eles.
@@ -512,22 +573,26 @@ void menuContatos(Agenda& a) {
     } while (opcao != 0);
 }
 
-// Busca contatos pelo nome (busca sequencial) e mostra quantas comparacoes foram feitas.
+// Busca por nome, telefone, e-mail ou empresa, com busca sequencial ou binaria.
 void menuBuscar(Agenda& a) {
     if (a.total == 0) {
         cout << "  Nenhum contato cadastrado.\n";
         return;
     }
-    string nome = lerTexto("Nome (exato, sem diferenciar maiusculas)");
-    long comparacoes = 0;
-    int achados = 0;
-    int pos = buscaSequencial(a.contatos, a.total, CAMPO_NOME, nome, &comparacoes);
-    while (pos != -1) {
-        exibirContato(a.contatos[pos]);
-        achados++;
-        pos = buscaSequencial(a.contatos, a.total, CAMPO_NOME, nome, &comparacoes, pos + 1);
+    int campo = lerCampo("Buscar por");
+    string chave = lerTexto("Valor procurado (exato, sem diferenciar maiusculas)");
+    int metodo = lerInteiro("Metodo (1 = sequencial, 2 = binaria)", 1, 2);
+    if (!cin) return;
+    Contato* copia[MAX];
+    Contato** v = a.contatos;
+    long comparacoes = 0, custoOrdenar = 0;
+    if (metodo == 2) {  // a binaria precisa do vetor ordenado
+        copiarOrdenado(a, copia, campo, &custoOrdenar);
+        v = copia;
     }
+    int achados = buscarEExibir(v, a.total, campo, chave, metodo, &comparacoes);
     cout << "  Encontrados: " << achados << " | Comparacoes: " << comparacoes << "\n";
+    if (metodo == 2) cout << "  (ordenar a copia custou " << custoOrdenar << " comparacoes)\n";
 }
 
 NoGrupo* lerGrupo(Agenda& a) {
@@ -666,14 +731,55 @@ void menuArvore(Agenda& a) {
     } while (opcao != 0);
 }
 
+// Compara as tres buscas com o mesmo valor, por contagem de comparacoes.
+void compararBuscas(Agenda& a) {
+    int campo = lerCampo("Campo");
+    string chave = lerTexto("Valor procurado");
+    if (!cin) return;
+    Contato* copia[MAX];
+    long seq = 0, bin = 0, arv = 0, custoOrdenar = 0;
+    copiarOrdenado(a, copia, campo, &custoOrdenar);
+    int iSeq = buscaSequencial(a.contatos, a.total, campo, chave, &seq);
+    int iBin = buscaBinaria(copia, a.total, campo, chave, &bin);
+    cout << "  n = " << a.total << " | campo: " << CAMPOS[campo - 1] << " | valor: " << chave << "\n";
+    cout << "  Sequencial: " << seq << " comparacoes (achou: " << (iSeq != -1 ? "sim" : "nao") << ")\n";
+    cout << "  Binaria:    " << bin << " comparacoes (achou: " << (iBin != -1 ? "sim" : "nao") << ")\n";
+    if (campo == CAMPO_NOME) {  // a arvore so indexa o nome
+        int achados = buscarNaArvore(a.raiz, chave, &arv, false);
+        cout << "  Arvore:     " << arv << " comparacoes (achou: " << (achados > 0 ? "sim" : "nao") << ")\n";
+    }
+    cout << "  Ordenar para a binaria custa " << custoOrdenar << " comparacoes, uma unica vez.\n";
+}
+
+void menuComparar(Agenda& a) {
+    int opcao;
+    do {
+        cout << "\n=== COMPARAR BUSCAS ===\n1. Gerar contatos de teste\n"
+             << "2. Comparar sequencial, binaria e arvore\n0. Voltar\n";
+        opcao = lerInteiro("Opcao", 0, 2);
+        if (opcao == 1 && a.total >= MAX) {
+            cout << "  Agenda cheia.\n";
+        } else if (opcao == 1) {
+            int quantidade = lerInteiro("Quantos contatos gerar", 1, MAX - a.total);
+            if (!cin) continue;
+            gerarContatosTeste(a, quantidade);
+            cout << "  " << quantidade << " gerados. Total: " << a.total << ". Ultimo: " << a.contatos[a.total - 1]->nome << ".\n";
+        } else if (opcao == 2) {
+            if (a.total == 0) cout << "  Nenhum contato cadastrado.\n";
+            else compararBuscas(a);
+        }
+    } while (opcao != 0);
+}
+
 void menuPrincipal(Agenda& a) {
     int opcao;
     do {
         cout << "\n=== AGENDA DE CONTATOS ===\n1. Contatos\n2. Buscar contatos\n";
         cout << "3. Grupos\n4. Historico de chamadas\n5. Fila de retorno\n";
         cout << "6. Ordenar contatos\n7. Arvore binaria (por nome)\n";
+        cout << "8. Comparar buscas\n";
         cout << "0. Sair\n";
-        opcao = lerInteiro("Opcao", 0, 7);
+        opcao = lerInteiro("Opcao", 0, 8);
         if (opcao == 1) menuContatos(a);
         else if (opcao == 2) menuBuscar(a);
         else if (opcao == 3) menuGrupos(a);
@@ -681,6 +787,7 @@ void menuPrincipal(Agenda& a) {
         else if (opcao == 5) menuFila(a);
         else if (opcao == 6) menuOrdenar(a);
         else if (opcao == 7) menuArvore(a);
+        else if (opcao == 8) menuComparar(a);
     } while (opcao != 0);
     cout << "\nEncerrando...\n";
 }
