@@ -5,23 +5,24 @@
 
 using namespace std;
 
-const int MAX = 1000;  // capacidade fixa do vetor de contatos
+const int MAX = 1000;  // o vetor de contatos tem tamanho fixo
 const int ID_MAXIMO = 999999999;
 
-// Campos usados nas buscas e na ordenacao.
+// Campos que podem ser usados nas buscas e na ordenacao
 enum Campo { CAMPO_NOME = 1, CAMPO_TELEFONE, CAMPO_EMAIL, CAMPO_EMPRESA };
 const char* const CAMPOS[] = {"Nome", "Telefone", "E-mail", "Empresa"};
 const int TOTAL_TIPOS = 3;
 const char* const TIPOS[TOTAL_TIPOS] = {"Realizada", "Recebida", "Perdida"};
 
-// ---------- Estruturas de dados ----------
+// Estruturas de dados
 
 struct Contato {
     int id = 0;
     string nome, telefone, email, empresa;
 };
 
-// Lista de grupos; cada grupo tem a sua lista de membros (ponteiros, sem copiar os contatos).
+// Os grupos formam uma lista, e cada grupo tem a sua propria lista de membros.
+// Os membros sao so ponteiros, entao nenhum contato e copiado.
 struct NoMembro {
     Contato* contato;
     NoMembro* proximo;
@@ -29,12 +30,12 @@ struct NoMembro {
 struct NoGrupo {
     int id;
     string nome;
-    NoMembro* membros;  // cabeca da lista de membros
+    NoMembro* membros;  // primeiro membro da lista
     NoGrupo* proximo;
 };
 
-// Pilha do historico e fila de retornos: guardam COPIA do nome e telefone,
-// entao continuam validas mesmo se o contato for excluido.
+// A pilha do historico e a fila de retornos guardam uma COPIA do nome e do telefone.
+// Assim elas continuam funcionando mesmo que o contato seja excluido depois.
 struct NoChamada {
     int numero;
     string nome, telefone, tipo;
@@ -49,34 +50,36 @@ struct NoRetorno {
     NoRetorno* proximo;
 };
 struct Fila {
-    NoRetorno* inicio = nullptr;  // proximo a ser atendido
-    NoRetorno* fim = nullptr;     // ultimo a entrar
+    NoRetorno* inicio = nullptr;  // quem vai ser atendido primeiro
+    NoRetorno* fim = nullptr;     // quem entrou por ultimo
 };
 
-// No da arvore binaria de busca (chave = nome). Guarda o ponteiro do contato, sem copiar.
+// No da arvore binaria de busca, organizada pelo nome.
+// Guarda so o ponteiro do contato, sem copiar nada.
 struct NoArvore {
     Contato* contato;
     NoArvore* esquerda;
     NoArvore* direita;
 };
 
-// Reune todos os dados. E passada por referencia (&) para as funcoes alterarem o original.
+// Junta todos os dados da agenda num lugar so. Ela e passada por referencia (&)
+// para que as funcoes mexam no original e nao numa copia.
 struct Agenda {
     Contato* contatos[MAX] = {};  // vetor de ponteiros; cada Contato e criado com new
     int total = 0;
     int proximoId = 1;
-    NoGrupo* grupos = nullptr;  // cabeca da lista de grupos
+    NoGrupo* grupos = nullptr;  // primeiro grupo da lista
     int proximoGrupo = 1;
     Pilha historico;
     int proximaChamada = 1;
     Fila retornos;
-    NoArvore* raiz = nullptr;  // arvore de contatos indexada pelo nome
+    NoArvore* raiz = nullptr;  // arvore de contatos organizada pelo nome
 };
 
-// ---------- Entrada de dados ----------
+// Entrada de dados
 
-// Le uma linha; com obrigatorio = true (valor padrao) repete ate nao ser vazia.
-// Se a entrada terminar (Ctrl+D), o laco sai e devolve "".
+// Le uma linha de texto. Com obrigatorio = true (o padrao), insiste ate o usuario
+// digitar alguma coisa. Se a entrada acabar (Ctrl+D), sai do laco e devolve "".
 string lerTexto(const string& rotulo, bool obrigatorio = true) {
     string linha;
     cout << rotulo << ": ";
@@ -87,7 +90,8 @@ string lerTexto(const string& rotulo, bool obrigatorio = true) {
     return "";
 }
 
-// Le um inteiro entre minimo e maximo (repete ate ser valido). Se a entrada terminar, devolve minimo.
+// Le um inteiro entre minimo e maximo e pergunta de novo enquanto o valor nao servir.
+// Se a entrada acabar, devolve o minimo.
 int lerInteiro(const string& rotulo, int minimo, int maximo) {
     string texto;
     cout << rotulo << ": ";
@@ -104,20 +108,21 @@ int lerInteiro(const string& rotulo, int minimo, int maximo) {
     return minimo;
 }
 
-// Pergunta sim/nao (so 's' ou 'S' conta como sim).
+// Pergunta sim ou nao. So 's' ou 'S' conta como sim.
 bool confirmar(const string& pergunta) {
     string resposta = lerTexto(pergunta + " (s/n)");
     return !resposta.empty() && (resposta[0] == 's' || resposta[0] == 'S');
 }
 
-// ---------- Comparacao e campos ----------
+// Comparacao e campos
 
-// Letra minuscula (so ASCII), para comparar sem diferenciar maiusculas.
+// Passa a letra para minuscula (so vale para ASCII), pra comparar sem ligar pra maiuscula.
 char minuscula(char c) {
     return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
 }
 
-// Compara dois textos sem diferenciar maiusculas. Retorno: -1 (a antes de b), 0 (iguais), 1 (a depois de b).
+// Compara dois textos ignorando maiusculas e minusculas.
+// Devolve -1 se a vem antes de b, 0 se sao iguais e 1 se a vem depois.
 int comparar(const string& a, const string& b) {
     size_t i = 0;
     while (i < a.size() && i < b.size()) {
@@ -130,8 +135,8 @@ int comparar(const string& a, const string& b) {
     return (a.size() < b.size()) ? -1 : 1;
 }
 
-// Devolve o campo escolhido do contato. O retorno e referencia (&) para nao copiar a string;
-// o contato vem por ponteiro const (*) porque a funcao so le.
+// Devolve o campo pedido do contato. O retorno e uma referencia (&) pra nao copiar a string,
+// e o contato chega como ponteiro const (*) porque aqui a gente so le, nunca altera.
 const string& valorDoCampo(const Contato* c, int campo) {
     if (campo == CAMPO_TELEFONE) return c->telefone;
     if (campo == CAMPO_EMAIL) return c->email;
@@ -139,22 +144,22 @@ const string& valorDoCampo(const Contato* c, int campo) {
     return c->nome;
 }
 
-// Mostra os campos numerados e le a escolha.
+// Mostra os campos numerados e le qual o usuario escolheu.
 int lerCampo(const string& rotulo) {
     for (int i = CAMPO_NOME; i <= CAMPO_EMPRESA; i++) cout << "  " << i << ") " << CAMPOS[i - 1] << "\n";
     return lerInteiro(rotulo, CAMPO_NOME, CAMPO_EMPRESA);
 }
 
-// Mostra um contato em uma linha.
+// Mostra um contato em uma linha so.
 void exibirContato(const Contato* c) {
     cout << "  [" << c->id << "] " << c->nome << " | " << c->telefone << " | "
          << (c->email.empty() ? "-" : c->email) << " | " << (c->empresa.empty() ? "-" : c->empresa) << "\n";
 }
 
-// ---------- Grupos: lista simplesmente encadeada [R5] ----------
+// Grupos: lista simplesmente encadeada [R5]
 
-// Insere um grupo no FIM da lista. 'lista' e referencia (&) ao ponteiro da cabeca:
-// se a lista estiver vazia, o ponteiro do chamador passa a apontar para o novo no.
+// Coloca um grupo no FIM da lista. 'lista' e uma referencia (&) ao ponteiro da cabeca:
+// se a lista estiver vazia, o ponteiro de quem chamou passa a apontar pro novo no.
 NoGrupo* criarGrupo(NoGrupo*& lista, int id, const string& nome) {
     NoGrupo* novo = new NoGrupo{id, nome, nullptr, nullptr};
     if (lista == nullptr) {
@@ -167,14 +172,14 @@ NoGrupo* criarGrupo(NoGrupo*& lista, int id, const string& nome) {
     return novo;
 }
 
-// Travessia da lista procurando um grupo pelo ID. 'lista' vai por valor: andar com ele
-// nao muda a cabeca do chamador. Retorno: o no ou nullptr.
+// Anda pela lista ate achar o grupo com aquele ID. 'lista' vai por valor, entao
+// andar com ele nao muda a cabeca da lista de quem chamou. Devolve o no ou nullptr.
 NoGrupo* buscarGrupo(NoGrupo* lista, int id) {
     while (lista != nullptr && lista->id != id) lista = lista->proximo;
     return lista;
 }
 
-// Remove um contato da lista de membros do grupo (o contato NAO e apagado).
+// Tira um contato da lista de membros do grupo (o contato em si NAO e apagado).
 bool removerMembro(NoGrupo* g, int idContato) {
     NoMembro* anterior = nullptr;
     NoMembro* atual = g->membros;
@@ -189,7 +194,7 @@ bool removerMembro(NoGrupo* g, int idContato) {
     return true;
 }
 
-// Adiciona um contato no fim da lista de membros. Retorno: false se ja era membro.
+// Poe um contato no fim da lista de membros. Devolve false se ele ja estava la.
 bool adicionarMembro(NoGrupo* g, Contato* c) {
     NoMembro* ultimo = nullptr;
     for (NoMembro* m = g->membros; m != nullptr; m = m->proximo) {
@@ -218,7 +223,7 @@ bool removerGrupo(NoGrupo*& lista, int id) {
     return true;
 }
 
-// Travessia: mostra cada grupo e seus membros.
+// Percorre a lista mostrando cada grupo com os seus membros.
 void listarGrupos(const NoGrupo* lista) {
     if (lista == nullptr) {
         cout << "  Nenhum grupo cadastrado.\n";
@@ -231,19 +236,20 @@ void listarGrupos(const NoGrupo* lista) {
     }
 }
 
-// ---------- Pilha (LIFO): historico de chamadas [R6] ----------
+// Pilha (LIFO): historico de chamadas [R6]
 
-// push: o novo no aponta para o antigo topo e vira o topo. 'p' vai por referencia (&) porque o topo muda.
+// push: o novo no aponta pro antigo topo e passa a ser o topo. 'p' vai por referencia (&)
+// porque o topo muda.
 void empilharChamada(Pilha& p, int numero, const Contato* c, const string& tipo) {
     p.topo = new NoChamada{numero, c->nome, c->telefone, tipo, p.topo};
 }
 
-// peek: consulta o topo sem remover. Retorno: nullptr se vazia.
+// peek: da uma olhada no topo sem tirar nada. Devolve nullptr se a pilha estiver vazia.
 const NoChamada* consultarTopo(const Pilha& p) {
     return p.topo;
 }
 
-// pop: remove o topo (a chamada mais recente). Retorno: false se vazia.
+// pop: tira o topo (a chamada mais recente). Devolve false se a pilha estiver vazia.
 bool desempilharChamada(Pilha& p) {
     if (p.topo == nullptr) return false;
     NoChamada* removido = p.topo;
@@ -252,12 +258,12 @@ bool desempilharChamada(Pilha& p) {
     return true;
 }
 
-// Mostra uma chamada em uma linha.
+// Mostra uma chamada em uma linha so.
 void exibirChamada(const NoChamada* n) {
     cout << "  #" << n->numero << " | " << n->tipo << " | " << n->nome << " (" << n->telefone << ")\n";
 }
 
-// Lista do mais recente (topo) para o mais antigo, sem alterar a pilha.
+// Lista da mais recente (topo) para a mais antiga, sem mexer na pilha.
 void listarHistorico(const Pilha& p) {
     if (p.topo == nullptr) {
         cout << "  Historico vazio.\n";
@@ -266,14 +272,14 @@ void listarHistorico(const Pilha& p) {
     for (const NoChamada* n = p.topo; n != nullptr; n = n->proximo) exibirChamada(n);
 }
 
-// Esvazia a pilha liberando os nos.
+// Esvazia a pilha, liberando os nos.
 void liberarPilha(Pilha& p) {
     while (desempilharChamada(p)) {}
 }
 
-// ---------- Fila (FIFO): retornos de ligacao [R7] ----------
+// Fila (FIFO): retornos de ligacao [R7]
 
-// enqueue: insere no FIM da fila. Retorno: false se o contato ja esta aguardando.
+// enqueue: poe no FIM da fila. Devolve false se o contato ja estava esperando.
 bool enfileirarRetorno(Fila& f, const Contato* c) {
     for (const NoRetorno* n = f.inicio; n != nullptr; n = n->proximo)
         if (n->idContato == c->id) return false;
@@ -284,22 +290,22 @@ bool enfileirarRetorno(Fila& f, const Contato* c) {
     return true;
 }
 
-// dequeue: remove o PRIMEIRO da fila (quem entrou antes). Retorno: false se vazia.
+// dequeue: tira o PRIMEIRO da fila (quem chegou antes). Devolve false se a fila estiver vazia.
 bool desenfileirarRetorno(Fila& f) {
     if (f.inicio == nullptr) return false;
     NoRetorno* removido = f.inicio;
     f.inicio = removido->proximo;
-    if (f.inicio == nullptr) f.fim = nullptr;  // a fila ficou vazia
+    if (f.inicio == nullptr) f.fim = nullptr;  // a fila esvaziou, entao o fim tambem zera
     delete removido;
     return true;
 }
 
-// Mostra um retorno pendente em uma linha.
+// Mostra um retorno pendente em uma linha so.
 void exibirRetorno(const NoRetorno* n) {
     cout << "[" << n->idContato << "] " << n->nome << " (" << n->telefone << ")\n";
 }
 
-// Lista os retornos na ordem de atendimento.
+// Lista os retornos na ordem em que vao ser atendidos.
 void listarRetornos(const Fila& f) {
     if (f.inicio == nullptr) {
         cout << "  Nenhum retorno pendente.\n";
@@ -312,16 +318,17 @@ void listarRetornos(const Fila& f) {
     }
 }
 
-// Esvazia a fila liberando os nos.
+// Esvazia a fila, liberando os nos.
 void liberarFila(Fila& f) {
     while (desenfileirarRetorno(f)) {}
 }
 
-// ---------- Arvore binaria de busca (recursiva) [R3, R8] ----------
-// Por que arvore: indexada pelo nome, a busca e O(log n) em media e o percurso in-order entrega
-// os contatos em ordem alfabetica sem ordenar o vetor. Nome igual vai para a direita (homonimos).
+// Arvore binaria de busca (recursiva) [R3, R8]
+// Por que uma arvore: organizada pelo nome, a busca custa O(log n) em media, e o percurso
+// in-order ja entrega os contatos em ordem alfabetica sem precisar ordenar o vetor.
+// Nomes iguais vao para a direita (homonimos).
 
-// Insere um contato (recursivo). Retorno: a raiz da subarvore depois da insercao.
+// Insere um contato de forma recursiva. Devolve a raiz da subarvore depois da insercao.
 NoArvore* inserirNaArvore(NoArvore* raiz, Contato* c) {
     if (raiz == nullptr) return new NoArvore{c, nullptr, nullptr};
     if (comparar(c->nome, raiz->contato->nome) < 0) raiz->esquerda = inserirNaArvore(raiz->esquerda, c);
@@ -329,9 +336,9 @@ NoArvore* inserirNaArvore(NoArvore* raiz, Contato* c) {
     return raiz;
 }
 
-// Busca recursiva pelo nome (acha todos os homonimos). 'comparacoes' e ponteiro (*) para o mesmo
-// contador ser somado em todas as chamadas recursivas; 'exibir' tem valor padrao true.
-// Retorno: quantidade de contatos encontrados.
+// Busca recursiva pelo nome, achando todos os homonimos. 'comparacoes' e um ponteiro (*)
+// pra que o mesmo contador seja somado em todas as chamadas recursivas; 'exibir' vale true
+// por padrao. Devolve quantos contatos foram encontrados.
 int buscarNaArvore(const NoArvore* raiz, const string& nome, long* comparacoes, bool exibir = true) {
     if (raiz == nullptr) return 0;
     (*comparacoes)++;
@@ -353,7 +360,8 @@ void percorrerEmOrdem(const NoArvore* raiz) {
     percorrerEmOrdem(raiz->direita);
 }
 
-// Libera os nos (recursivo, pos-ordem); os contatos NAO sao apagados. 'raiz' por referencia (&).
+// Libera os nos recursivamente (pos-ordem). Os contatos NAO sao apagados.
+// 'raiz' vai por referencia (&) pra ficar nullptr no final.
 void liberarArvore(NoArvore*& raiz) {
     if (raiz == nullptr) return;
     liberarArvore(raiz->esquerda);
@@ -362,16 +370,16 @@ void liberarArvore(NoArvore*& raiz) {
     raiz = nullptr;
 }
 
-// ---------- Ordenacao [R9] ----------
+// Ordenacao [R9]
 
-// Insertion Sort: insere cada elemento na posicao certa da parte ja ordenada.
+// Insertion Sort: pega cada elemento e encaixa na posicao certa da parte que ja esta ordenada.
 // Complexidade (n = quantidade de contatos):
-//   melhor caso O(n)    - vetor ja ordenado (1 comparacao por elemento)
+//   melhor caso O(n)    - vetor ja ordenado (so 1 comparacao por elemento)
 //   caso medio  O(n^2)
 //   pior caso   O(n^2)  - vetor em ordem inversa
-//   memoria extra O(1)  - ordena no proprio vetor; e estavel.
+//   memoria extra O(1)  - ordena no proprio vetor, e e estavel.
 // 'v' e um vetor de ponteiros (Contato**): so os ponteiros trocam de lugar, nao os contatos.
-// 'comparacoes' e ponteiro (*) para o chamador receber a contagem.
+// 'comparacoes' e um ponteiro (*) pra quem chamou receber a contagem.
 void insertionSort(Contato** v, int n, int campo, long* comparacoes) {
     for (int i = 1; i < n; i++) {
         Contato* atual = v[i];
@@ -386,11 +394,11 @@ void insertionSort(Contato** v, int n, int campo, long* comparacoes) {
     }
 }
 
-// ---------- Busca [R10] ----------
+// Busca [R10]
 
-// Busca sequencial: percorre o vetor do inicio ao fim. Melhor caso O(1), medio e pior O(n);
-// funciona com vetor desordenado. 'inicio' tem valor padrao 0 (permite achar as proximas
-// ocorrencias). Retorno: indice da primeira ocorrencia ou -1.
+// Busca sequencial: anda pelo vetor do comeco ao fim. Melhor caso O(1), medio e pior O(n),
+// e funciona mesmo com o vetor desordenado. 'inicio' vale 0 por padrao e serve pra achar
+// as proximas ocorrencias. Devolve o indice da primeira ocorrencia ou -1.
 int buscaSequencial(Contato** v, int n, int campo, const string& chave, long* comparacoes, int inicio = 0) {
     for (int i = inicio; i < n; i++) {
         (*comparacoes)++;
@@ -399,9 +407,9 @@ int buscaSequencial(Contato** v, int n, int campo, const string& chave, long* co
     return -1;
 }
 
-// Busca binaria: compara com o elemento do meio e descarta metade do vetor a cada passo.
-// Complexidade: melhor O(1), medio e pior O(log n); exige o vetor ORDENADO pelo mesmo campo.
-// Ao achar, continua a esquerda para devolver a PRIMEIRA ocorrencia. Retorno: indice ou -1.
+// Busca binaria: compara com o elemento do meio e joga fora metade do vetor a cada passo.
+// Complexidade: melhor O(1), medio e pior O(log n). Precisa do vetor ORDENADO pelo mesmo campo.
+// Quando acha, continua pela esquerda pra devolver a PRIMEIRA ocorrencia. Devolve o indice ou -1.
 int buscaBinaria(Contato** v, int n, int campo, const string& chave, long* comparacoes) {
     int esquerda = 0, direita = n - 1, achado = -1;
     while (esquerda <= direita) {
@@ -420,14 +428,14 @@ int buscaBinaria(Contato** v, int n, int campo, const string& chave, long* compa
     return achado;
 }
 
-// Copia os ponteiros da agenda para 'destino' e ordena a COPIA (a ordem da agenda nao muda).
+// Copia os ponteiros da agenda pra 'destino' e ordena so a COPIA, entao a ordem da agenda nao muda.
 void copiarOrdenado(const Agenda& a, Contato** destino, int campo, long* comparacoes) {
     for (int i = 0; i < a.total; i++) destino[i] = a.contatos[i];
     insertionSort(destino, a.total, campo, comparacoes);
 }
 
-// Executa a busca (metodo 1 = sequencial, 2 = binaria) e mostra todos os contatos encontrados.
-// Retorno: quantidade de contatos encontrados.
+// Faz a busca (metodo 1 = sequencial, 2 = binaria) e mostra todos os contatos que acharem.
+// Devolve quantos foram encontrados.
 int buscarEExibir(Contato** v, int n, int campo, const string& chave, int metodo, long* comparacoes) {
     int achados = 0;
     int pos = (metodo == 1) ? buscaSequencial(v, n, campo, chave, comparacoes)
@@ -437,7 +445,7 @@ int buscarEExibir(Contato** v, int n, int campo, const string& chave, int metodo
         achados++;
         if (metodo == 1) {
             pos = buscaSequencial(v, n, campo, chave, comparacoes, pos + 1);
-        } else {  // no vetor ordenado os repetidos ficam lado a lado
+        } else {  // no vetor ordenado, os repetidos ficam um do lado do outro
             pos++;
             (*comparacoes)++;
             if (pos >= n || comparar(valorDoCampo(v[pos], campo), chave) != 0) pos = -1;
@@ -446,23 +454,24 @@ int buscarEExibir(Contato** v, int n, int campo, const string& chave, int metodo
     return achados;
 }
 
-// ---------- Operacoes da agenda ----------
+// Operacoes da agenda
 
-// Procura a posicao de um contato no vetor pelo ID. Retorno: indice ou -1.
+// Procura em que posicao do vetor esta o contato com aquele ID. Devolve o indice ou -1.
 int indiceDoContato(const Agenda& a, int id) {
     for (int i = 0; i < a.total; i++)
         if (a.contatos[i]->id == id) return i;
     return -1;
 }
 
-// Reconstroi a arvore a partir do vetor (usado ao excluir, no lugar de remover um no).
+// Refaz a arvore do zero a partir do vetor. Usado na exclusao, que e mais simples
+// do que tirar um no da arvore.
 void reconstruirArvore(Agenda& a) {
     liberarArvore(a.raiz);
     for (int i = 0; i < a.total; i++) a.raiz = inserirNaArvore(a.raiz, a.contatos[i]);
 }
 
-// Cria o contato com new e o guarda no vetor ('dados' por referencia const &: sem copia).
-// Retorno: ponteiro do contato criado ou nullptr se a agenda estiver cheia.
+// Cria o contato com new e guarda no vetor ('dados' vai por referencia const &, sem copia).
+// Devolve o ponteiro do contato criado ou nullptr se a agenda estiver cheia.
 Contato* adicionarContato(Agenda& a, const Contato& dados) {
     if (a.total >= MAX) return nullptr;
     Contato* novo = new Contato(dados);
@@ -472,8 +481,8 @@ Contato* adicionarContato(Agenda& a, const Contato& dados) {
     return novo;
 }
 
-// Exclui um contato: tira dos grupos e da arvore e depois libera a memoria com delete.
-// Retorno: false se o ID nao existe.
+// Exclui um contato: tira dos grupos e da arvore e so depois libera a memoria com delete.
+// Devolve false se o ID nao existe.
 bool excluirContato(Agenda& a, int id) {
     int pos = indiceDoContato(a, id);
     if (pos < 0) return false;
@@ -487,8 +496,8 @@ bool excluirContato(Agenda& a, int id) {
     return true;
 }
 
-// Cria contatos de teste ("Contato N") so para comparar as buscas. A conta embaralha os
-// numeros para a arvore nao virar uma lista.
+// Cria contatos de teste ("Contato N") so pra comparar as buscas. A conta embaralha os
+// numeros pra arvore nao virar uma lista.
 void gerarContatosTeste(Agenda& a, int quantidade) {
     for (int k = 0; k < quantidade; k++) {
         int n = (a.proximoId * 7919) % 10007;
@@ -501,7 +510,7 @@ void gerarContatosTeste(Agenda& a, int quantidade) {
     }
 }
 
-// Libera toda a memoria da agenda. Os contatos vao por ultimo: grupos e arvore apontam para eles.
+// Libera toda a memoria da agenda. Os contatos ficam por ultimo, porque grupos e arvore apontam pra eles.
 void liberarAgenda(Agenda& a) {
     while (a.grupos != nullptr) removerGrupo(a.grupos, a.grupos->id);
     liberarPilha(a.historico);
@@ -514,7 +523,7 @@ void liberarAgenda(Agenda& a) {
     a.total = 0;
 }
 
-// Lista os contatos do vetor (no maximo 'maximo'; valor padrao: todos).
+// Lista os contatos do vetor (no maximo 'maximo'; por padrao, todos).
 void listarContatos(const Agenda& a, int maximo = MAX) {
     if (a.total == 0) {
         cout << "  Nenhum contato cadastrado.\n";
@@ -524,7 +533,7 @@ void listarContatos(const Agenda& a, int maximo = MAX) {
     cout << "  Total: " << a.total << " contato(s).\n";
 }
 
-// ---------- Menus ----------
+// Menus
 
 // Pede um ID e devolve o contato (ou nullptr, ja avisando o usuario).
 Contato* lerContato(Agenda& a) {
@@ -544,7 +553,7 @@ void cadastrarContatoMenu(Agenda& a) {
     c.telefone = lerTexto("Telefone");
     c.email = lerTexto("E-mail (opcional)", false);
     c.empresa = lerTexto("Empresa (opcional)", false);
-    if (!cin) return;  // a entrada terminou no meio do cadastro
+    if (!cin) return;  // a entrada acabou no meio do cadastro
     Contato* novo = adicionarContato(a, c);
     if (novo == nullptr) cout << "  Agenda cheia (maximo " << MAX << ").\n";
     else cout << "  Contato cadastrado com ID " << novo->id << ".\n";
@@ -586,7 +595,7 @@ void menuBuscar(Agenda& a) {
     Contato* copia[MAX];
     Contato** v = a.contatos;
     long comparacoes = 0, custoOrdenar = 0;
-    if (metodo == 2) {  // a binaria precisa do vetor ordenado
+    if (metodo == 2) {  // a binaria so funciona com o vetor ordenado
         copiarOrdenado(a, copia, campo, &custoOrdenar);
         v = copia;
     }
@@ -731,7 +740,7 @@ void menuArvore(Agenda& a) {
     } while (opcao != 0);
 }
 
-// Compara as tres buscas com o mesmo valor, por contagem de comparacoes.
+// Compara as tres buscas com o mesmo valor, olhando quantas comparacoes cada uma fez.
 void compararBuscas(Agenda& a) {
     int campo = lerCampo("Campo");
     string chave = lerTexto("Valor procurado");
@@ -744,7 +753,7 @@ void compararBuscas(Agenda& a) {
     cout << "  n = " << a.total << " | campo: " << CAMPOS[campo - 1] << " | valor: " << chave << "\n";
     cout << "  Sequencial: " << seq << " comparacoes (achou: " << (iSeq != -1 ? "sim" : "nao") << ")\n";
     cout << "  Binaria:    " << bin << " comparacoes (achou: " << (iBin != -1 ? "sim" : "nao") << ")\n";
-    if (campo == CAMPO_NOME) {  // a arvore so indexa o nome
+    if (campo == CAMPO_NOME) {  // a arvore so e organizada pelo nome
         int achados = buscarNaArvore(a.raiz, chave, &arv, false);
         cout << "  Arvore:     " << arv << " comparacoes (achou: " << (achados > 0 ? "sim" : "nao") << ")\n";
     }
